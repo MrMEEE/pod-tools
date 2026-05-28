@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# podman-tools release wrapper
+# pod-tools release wrapper
 #
 # Bumps the version, updates version.py + the RPM spec changelog,
 # then commits, tags, and pushes — which triggers the GitHub Actions

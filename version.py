@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-podman-tools version information.
+pod-tools version information.
 
 This file is the single source of truth for the package version.
 It is updated automatically by tools/release.py.

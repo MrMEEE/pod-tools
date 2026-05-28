@@ -1,7 +1,7 @@
 # ── Suppress debuginfo (scripts have no ELF binaries) ─────────────────────────
 %global debug_package %{nil}
 
-Name:           podman-tools
+Name:           pod-tools
 Version:        %{version_string}
 Release:        1%{?dist}
 Summary:        Collection of Podman helper scripts

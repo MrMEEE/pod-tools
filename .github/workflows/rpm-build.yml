@@ -64,10 +64,10 @@ jobs:
       - name: Create source tarball
         run: |
           VERSION="${{ steps.ver.outputs.version }}"
-          TARBALL="${HOME}/rpmbuild/SOURCES/podman-tools-${VERSION}.tar.gz"
+          TARBALL="${HOME}/rpmbuild/SOURCES/pod-tools-${VERSION}.tar.gz"
           git archive \
             --format=tar.gz \
-            --prefix="podman-tools-${VERSION}/" \
+            --prefix="pod-tools-${VERSION}/" \
             HEAD \
             > "${TARBALL}"
           ls -lh "${TARBALL}"
@@ -76,7 +76,7 @@ jobs:
       - name: Build RPM
         run: |
           VERSION="${{ steps.ver.outputs.version }}"
-          rpmbuild -ba packaging/podman-tools.spec \
+          rpmbuild -ba packaging/pod-tools.spec \
             --define "version_string ${VERSION}" \
             --define "_topdir ${HOME}/rpmbuild"
 
@@ -123,7 +123,7 @@ jobs:
             ## Installation
 
             ```bash
-            dnf install podman-tools-${{ github.event_name == 'workflow_dispatch' && github.event.inputs.version || github.ref_name }}.noarch.rpm
+            dnf install pod-tools-${{ github.event_name == 'workflow_dispatch' && github.event.inputs.version || github.ref_name }}.noarch.rpm
             ```
 
             Scripts installed to `/usr/bin/`:

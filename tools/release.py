@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """
-podman-tools Release Manager
+pod-tools Release Manager
 
 Automates the full release process:
   - Version bump (patch by default, or --minor / --major / --version X.Y.Z)
   - Updates version.py (VERSION + BUILD_DATE)
-  - Prepends a %changelog entry to packaging/podman-tools.spec
+  - Prepends a %changelog entry to packaging/pod-tools.spec
   - git commit → tag → push  (triggers the GitHub Actions RPM build workflow)
 
 Usage:
@@ -28,7 +28,7 @@ from pathlib import Path
 # ── Project layout ─────────────────────────────────────────────────────────────
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 VERSION_FILE = PROJECT_ROOT / "version.py"
-SPEC_FILE    = PROJECT_ROOT / "packaging" / "podman-tools.spec"
+SPEC_FILE    = PROJECT_ROOT / "packaging" / "pod-tools.spec"
 
 # ──────────────────────────────────────────────────────────────────────────────
 
@@ -256,7 +256,7 @@ class ReleaseManager:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="podman-tools release manager",
+        description="pod-tools release manager",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__,
     )
