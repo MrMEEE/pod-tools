@@ -1,0 +1,219 @@
+#!/usr/bin/env python3
+import argparse
+import ast
+import os
+import glob
+import subprocess
+import sys
+import tempfile
+
+
+def get_container_engine():
+    """Detects whether podman or docker is installed on the host."""
+    for engine in ["podman", "docker"]:
+        try:
+            subprocess.run(
+                [engine, "--version"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                check=True,
+            )
+            return engine
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            continue
+    print(
+        "Error: Neither 'podman' nor 'docker' could be found in your PATH.",
+        file=sys.stderr,
+    )
+    sys.exit(1)
+
+
+def image_exists(engine, image_name):
+    """Checks if the container image exists locally."""
+    result = subprocess.run(
+        [engine, "images", "-q", image_name],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    return bool(result.stdout.strip())
+
+
+def build_image(engine, image_name):
+    """Creates a base image with base build tools."""
+    print(f"Building/Updating image '{image_name}' using {engine}...")
+
+    dockerfile_content = """FROM registry.access.redhat.com/ubi10/ubi
+RUN dnf install -y python3 python3-pip binutils && \\
+    dnf clean all
+RUN pip3 install --no-cache-dir pyinstaller
+WORKDIR /workspace
+"""
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        dockerfile_path = os.path.join(tmpdir, "Dockerfile")
+        with open(dockerfile_path, "w") as f:
+            f.write(dockerfile_content)
+
+        cmd = [engine, "build", "-t", image_name, tmpdir]
+        try:
+            subprocess.run(cmd, check=True)
+            print(f"Successfully built base image {image_name}\n")
+        except subprocess.CalledProcessError as e:
+            print(f"Failed to build image: {e}", file=sys.stderr)
+            sys.exit(1)
+
+
+def extract_dependencies(script_path):
+    """Statically parses the python file to extract top-level imports."""
+    with open(script_path, "r", encoding="utf-8") as f:
+        tree = ast.parse(f.read(), filename=script_path)
+
+    imported_modules = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for name in node.names:
+                imported_modules.add(name.name.split(".")[0])
+        elif isinstance(node, ast.ImportFrom):
+            if node.module:
+                imported_modules.add(node.module.split(".")[0])
+
+    stdlib_modules = {
+        "sys", "os", "datetime", "math", "time", "json", "re", 
+        "argparse", "subprocess", "tempfile", "ast"
+    }
+    third_party = imported_modules - stdlib_modules
+    return list(third_party)
+
+
+def find_venv_site_packages(venv_abs_path):
+    """Locates the site-packages directory inside a local venv structure."""
+    pattern = os.path.join(venv_abs_path, "lib", "python3.*", "site-packages")
+    matches = glob.glob(pattern)
+    if matches:
+        return os.path.relpath(matches[0], venv_abs_path)
+    return None
+
+
+def run_pyinstaller(engine, image_name, script_path, output_dir, dependencies, venv_path):
+    """Mounts directories, links dependencies, and runs PyInstaller inside the container."""
+    script_abs = os.path.abspath(script_path)
+    script_dir = os.path.dirname(script_abs)
+    script_name = os.path.basename(script_abs)
+    output_abs = os.path.abspath(output_dir)
+
+    print(f"Preparing to compile {script_name}...")
+
+    # Base engine run configurations
+    run_cmd = [
+        engine,
+        "run",
+        "--rm",
+        "-v", f"{script_dir}:/workspace:z",
+    ]
+
+    if script_dir != output_abs:
+        run_cmd.extend(["-v", f"{output_abs}:/output:z"])
+        container_out = "/output"
+    else:
+        container_out = "/workspace"
+
+    # Explicitly map container side paths to bypass UBI core configuration limits
+    container_pythonpath = "/usr/local/lib/python3.12/site-packages:/usr/local/lib64/python3.12/site-packages"
+
+    if venv_path:
+        venv_abs = os.path.abspath(venv_path)
+        if not os.path.isdir(venv_abs):
+            print(f"Error: Specified venv directory '{venv_path}' does not exist.", file=sys.stderr)
+            sys.exit(1)
+        
+        print(f"Mounting virtual environment: {venv_abs}")
+        run_cmd.extend(["-v", f"{venv_abs}:/venv:z"])
+        
+        rel_site_packages = find_venv_site_packages(venv_abs)
+        if rel_site_packages:
+            container_site_packages = os.path.join("/venv", rel_site_packages)
+            container_pythonpath = f"{container_site_packages}:{container_pythonpath}"
+            print(f"Mapped venv site-packages to container layout.")
+        else:
+            print("Warning: Could not automatically pinpoint 'site-packages' layout inside the provided venv.", file=sys.stderr)
+
+    run_cmd.extend(["-e", f"PYTHONPATH={container_pythonpath}"])
+    run_cmd.append(image_name)
+
+    # Compile internal pipelines safely
+    pip_install_cmd = ""
+    if dependencies:
+        print(f"Auto-discovered dependencies to install: {dependencies}")
+        deps_str = " ".join(dependencies)
+        pip_install_cmd = f"pip3 install --no-cache-dir {deps_str} && "
+
+    # Force a clean execution step to bypass stale local cache folders
+    pyinstaller_cmd = (
+        f"pyinstaller --clean --onefile "
+        f"--distpath={container_out}/dist "
+        f"--workpath={container_out}/build "
+        f"/workspace/{script_name}"
+    )
+
+    # Combine pipeline strings to prevent host evaluation errors
+    inner_pipeline = f"{pip_install_cmd}{pyinstaller_cmd}"
+    run_cmd.extend(["/bin/bash", "-c", inner_pipeline])
+
+    print(f"\nRunning command:\n{' '.join(run_cmd)}\n")
+    try:
+        subprocess.run(run_cmd, check=True)
+        print("\nPyInstaller compilation finished successfully!")
+    except subprocess.CalledProcessError as e:
+        print(f"\nPyInstaller failed inside the container: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Run PyInstaller inside a UBI10 container with configurable dependency strategies."
+    )
+    parser.add_argument(
+        "script", help="Path to the Python script you want to compile."
+    )
+    parser.add_argument(
+        "--update",
+        action="store_true",
+        help="Force rebuild of the 'pyinstaller-build' container image.",
+    )
+    parser.add_argument(
+        "--output",
+        help="Directory to place the compiled package (defaults to script's directory).",
+    )
+    parser.add_argument(
+        "--autodiscovery",
+        action="store_true",
+        help="Statically parse script imports and download missing modules via pip inside container.",
+    )
+    parser.add_argument(
+        "--venv",
+        help="Path to a local Python virtual environment folder to use for dependencies.",
+    )
+
+    args = parser.parse_args()
+
+    if not os.path.exists(args.script):
+        print(f"Error: Script file '{args.script}' not found.", file=sys.stderr)
+        sys.exit(1)
+
+    image_name = "pyinstaller-build"
+    engine = get_container_engine()
+
+    output_dir = args.output if args.output else os.path.dirname(os.path.abspath(args.script))
+    os.makedirs(output_dir, exist_ok=True)
+
+    if args.update or not image_exists(engine, image_name):
+        build_image(engine, image_name)
+
+    deps = extract_dependencies(args.script) if args.autodiscovery else []
+
+    run_pyinstaller(engine, image_name, args.script, output_dir, deps, args.venv)
+
+
+if __name__ == "__main__":
+    main()
