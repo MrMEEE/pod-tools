@@ -35,8 +35,7 @@ jobs:
           dnf install -y \
             rpm-build \
             rpmdevtools \
-            git \
-            coreutils
+            git
           rpmdev-setuptree
 
       # ── Checkout source ───────────────────────────────────────────────────────

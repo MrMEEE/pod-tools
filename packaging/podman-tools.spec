@@ -10,8 +10,6 @@ URL:            https://github.com/MrMEEE/pod-tools
 Source0:        %{name}-%{version}.tar.gz
 BuildArch:      noarch
 
-BuildRequires:  coreutils
-
 %description
 A collection of helper scripts for working with Podman containers.
 
