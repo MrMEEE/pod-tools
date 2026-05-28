@@ -27,6 +27,9 @@ find scripts/ -maxdepth 1 -type f -exec install -m 0755 {} %{buildroot}%{_bindir
 
 %changelog
 
+* Thu May 28 2026 Release Bot <release@pod-tools> - 0.1.3-1
+- Release 0.1.3
+
 * Thu May 28 2026 Release Bot <release@pod-tools> - 0.1.2-1
 - Release 0.1.2
 
