@@ -1,0 +1,132 @@
+name: Build RPM
+
+# ── Run on version tags, or manually via the GitHub Actions UI ─────────────────
+on:
+  push:
+    tags:
+      - 'v[0-9]*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to build (e.g. 0.1.1) — must be an existing tag'
+        required: true
+        type: string
+
+permissions:
+  contents: write   # needed to create GitHub Releases
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+jobs:
+  # ─────────────────────────────────────────────────────────────────────────────
+  build-rpm:
+    name: RPM — RHEL 10
+    runs-on: ubuntu-latest
+
+    container:
+      image: quay.io/centos/centos:stream10
+      options: --privileged
+
+    steps:
+      # ── Install build toolchain ───────────────────────────────────────────────
+      - name: Install build dependencies
+        run: |
+          dnf install -y \
+            rpm-build \
+            rpmdevtools \
+            git \
+            coreutils
+          rpmdev-setuptree
+
+      # ── Checkout source ───────────────────────────────────────────────────────
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Mark workspace as git safe directory
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      # ── Determine version from tag or manual input ────────────────────────────
+      - name: Determine version
+        id: ver
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            VERSION="${{ github.event.inputs.version }}"
+            VERSION="${VERSION#v}"
+          else
+            VERSION="${GITHUB_REF_NAME#v}"
+          fi
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "Building version: ${VERSION}"
+
+      # ── Create source tarball ─────────────────────────────────────────────────
+      - name: Create source tarball
+        run: |
+          VERSION="${{ steps.ver.outputs.version }}"
+          TARBALL="${HOME}/rpmbuild/SOURCES/podman-tools-${VERSION}.tar.gz"
+          git archive \
+            --format=tar.gz \
+            --prefix="podman-tools-${VERSION}/" \
+            HEAD \
+            > "${TARBALL}"
+          ls -lh "${TARBALL}"
+
+      # ── Build RPM ─────────────────────────────────────────────────────────────
+      - name: Build RPM
+        run: |
+          VERSION="${{ steps.ver.outputs.version }}"
+          rpmbuild -ba packaging/podman-tools.spec \
+            --define "version_string ${VERSION}" \
+            --define "_topdir ${HOME}/rpmbuild"
+
+      # ── List output ───────────────────────────────────────────────────────────
+      - name: List built RPMs
+        run: find "${HOME}/rpmbuild/RPMS" -name '*.rpm' | sort
+
+      # ── Upload as workflow artifact ───────────────────────────────────────────
+      - name: Upload RPM artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: rpms-rhel10
+          path: ~/rpmbuild/RPMS/**/*.rpm
+          if-no-files-found: error
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  create-release:
+    name: Create GitHub Release
+    needs: build-rpm
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download RPM artifact
+        uses: actions/download-artifact@v4
+        with:
+          path: release-rpms/
+
+      - name: List release assets
+        run: find release-rpms/ -name '*.rpm' | sort
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event_name == 'workflow_dispatch' && format('v{0}', github.event.inputs.version) || github.ref_name }}
+          files: release-rpms/**/*.rpm
+          generate_release_notes: true
+          draft: false
+          prerelease: ${{ contains(github.event_name == 'workflow_dispatch' && github.event.inputs.version || github.ref_name, '-') }}
+          fail_on_unmatched_files: true
+          body: |
+            ## Installation
+
+            ```bash
+            dnf install podman-tools-${{ github.event_name == 'workflow_dispatch' && github.event.inputs.version || github.ref_name }}.noarch.rpm
+            ```
+
+            Scripts installed to `/usr/bin/`:
+
+            - `podpyinstall` — Run PyInstaller inside a UBI10 container
