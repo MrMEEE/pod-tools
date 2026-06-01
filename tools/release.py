@@ -191,6 +191,23 @@ class ReleaseManager:
             VERSION_FILE.write_text(text)
         self._changes.append(str(VERSION_FILE.relative_to(PROJECT_ROOT)))
 
+    def update_spec_version(self, new_version: str) -> None:
+        self.info(f"Updating Version: in {SPEC_FILE.relative_to(PROJECT_ROOT)}")
+        text = SPEC_FILE.read_text()
+        new_text = re.sub(
+            r'^(Version:\s*)\S+',
+            rf'\g<1>{new_version}',
+            text,
+            flags=re.MULTILINE,
+        )
+        if new_text == text:
+            self.warn("Version: field not found or already up to date in spec")
+            return
+        if not self.dry_run:
+            SPEC_FILE.write_text(new_text)
+        if str(SPEC_FILE.relative_to(PROJECT_ROOT)) not in self._changes:
+            self._changes.append(str(SPEC_FILE.relative_to(PROJECT_ROOT)))
+
     def update_spec_changelog(self, new_version: str) -> None:
         self.info(f"Prepending %changelog entry to {SPEC_FILE.relative_to(PROJECT_ROOT)}")
         today = datetime.now().strftime("%a %b %d %Y")
@@ -244,6 +261,7 @@ class ReleaseManager:
 
         # 3. Update files
         self.update_version_file(new_version)
+        self.update_spec_version(new_version)
         self.update_spec_changelog(new_version)
 
         # 4. Git

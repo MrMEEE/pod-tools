@@ -2,7 +2,7 @@
 %global debug_package %{nil}
 
 Name:           pod-tools
-Version:        %{version_string}
+Version:        0.1.3
 Release:        1%{?dist}
 Summary:        Collection of Podman helper scripts
 License:        MIT
