@@ -2,7 +2,7 @@
 %global debug_package %{nil}
 
 Name:           pod-tools
-Version:        0.1.3
+Version:        0.1.4
 Release:        1%{?dist}
 Summary:        Collection of Podman helper scripts
 License:        MIT
@@ -26,6 +26,9 @@ find scripts/ -maxdepth 1 -type f -exec install -m 0755 {} %{buildroot}%{_bindir
 %{_bindir}/*
 
 %changelog
+
+* Mon Jun 01 2026 Release Bot <release@pod-tools> - 0.1.4-1
+- Release 0.1.4
 
 * Thu May 28 2026 Release Bot <release@pod-tools> - 0.1.3-1
 - Release 0.1.3
