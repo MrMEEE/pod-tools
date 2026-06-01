@@ -64,7 +64,7 @@ jobs:
       - name: Create source tarball
         run: |
           VERSION="${{ steps.ver.outputs.version }}"
-          TARBALL="${HOME}/rpmbuild/SOURCES/pod-tools-${VERSION}.tar.gz"
+          TARBALL="${HOME}/rpmbuild/SOURCES/v${VERSION}.tar.gz"
           git archive \
             --format=tar.gz \
             --prefix="pod-tools-${VERSION}/" \
@@ -77,7 +77,6 @@ jobs:
         run: |
           VERSION="${{ steps.ver.outputs.version }}"
           rpmbuild -ba packaging/pod-tools.spec \
-            --define "version_string ${VERSION}" \
             --define "_topdir ${HOME}/rpmbuild"
 
       # ── List output ───────────────────────────────────────────────────────────
